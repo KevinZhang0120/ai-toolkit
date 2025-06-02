@@ -142,17 +142,15 @@ class StableDiffusion:
     ):
         self.accelerator = get_accelerator()
         self.custom_pipeline = custom_pipeline
-        self.device = str(device)
-        if "cuda" in self.device and ":" not in self.device:
-            self.device = f"{self.device}:0"
+        self.device = "cuda:7"
         self.device_torch = torch.device(device)
         self.dtype = dtype
         self.torch_dtype = get_torch_dtype(dtype)
 
-        self.vae_device_torch = torch.device(device)
+        self.vae_device_torch = torch.device("cuda:0")
         self.vae_torch_dtype = get_torch_dtype(model_config.vae_dtype)
 
-        self.te_device_torch = torch.device(device)
+        self.te_device_torch = torch.device("cuda:0")
         self.te_torch_dtype = get_torch_dtype(model_config.te_dtype)
 
         self.model_config = model_config
@@ -253,13 +251,13 @@ class StableDiffusion:
     
     def get_bucket_divisibility(self):
         if self.vae is None:
-            return 16
+            return 8
         divisibility = 2 ** (len(self.vae.config['block_out_channels']) - 1)
         
         # flux packs this again,
         if self.is_flux or self.is_v3:
             divisibility = divisibility * 2
-        return divisibility * 2 # todo remove this
+        return divisibility
         
 
     def load_model(self):
@@ -1547,8 +1545,8 @@ class StableDiffusion:
                     elif self.is_flux:
                         if self.model_config.use_flux_cfg:
                             img = pipeline(
-                                prompt_embeds=conditional_embeds.text_embeds,
-                                pooled_prompt_embeds=conditional_embeds.pooled_embeds,
+                                prompt_embeds=conditional_embeds.text_embeds.to(torch.device("cuda:0")),
+                                pooled_prompt_embeds=conditional_embeds.pooled_embeds.to(torch.device("cuda:0")),
                                 negative_prompt_embeds=unconditional_embeds.text_embeds,
                                 negative_pooled_prompt_embeds=unconditional_embeds.pooled_embeds,
                                 height=gen_config.height,
@@ -1567,8 +1565,8 @@ class StableDiffusion:
                                     latents = latents.to(self.unet.dtype)
                                 return {"latents": latents}
                             img = pipeline(
-                                prompt_embeds=conditional_embeds.text_embeds,
-                                pooled_prompt_embeds=conditional_embeds.pooled_embeds,
+                                prompt_embeds=conditional_embeds.text_embeds.to(torch.device("cuda:0")),
+                                pooled_prompt_embeds=conditional_embeds.pooled_embeds.to(torch.device("cuda:0")),
                                 # negative_prompt_embeds=unconditional_embeds.text_embeds,
                                 # negative_pooled_prompt_embeds=unconditional_embeds.pooled_embeds,
                                 height=gen_config.height,
@@ -2088,10 +2086,7 @@ class StableDiffusion:
                     noise_pred = noise_pred
             else:
                 if self.unet.device != self.device_torch:
-                    try:
-                        self.unet.to(self.device_torch)
-                    except Exception as e:
-                        pass
+                    self.unet.to(self.device_torch)
                 if self.unet.dtype != self.torch_dtype:
                     self.unet = self.unet.to(dtype=self.torch_dtype)
                 if self.is_flux:
